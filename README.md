@@ -23,3 +23,32 @@ reference: https://arxiv.org/abs/2406.04354
 
 data: https://mailsucasaccn-my.sharepoint.com/:f:/g/personal/duxiaoyang22_mails_ucas_ac_cn/EomiGNu7mO5FmUke62y6Q7IBIP64kpJrJMJOZp_c-qkFAA?e=x8gxuL.
 
+
+
+# Tasks
+
+1. Blue Whale detector
+    a. Train on DCLDE 2026 (except the JASCO Boundary Pass Data)
+    b. test on the Antartic Dataset
+
+2. Call type calssifier
+    a. Same model from previous task
+    b. Test on the JASCO boundary pass Data.
+
+3. Vessel type Classifier
+    a. Same model
+    b. Test on the Vessel dataset.
+
+
+# Representation
+
+1. Mid freq = 0-12kHz
+2. low freq = 0-500 Hz
+3. Duration 5s
+4. Duration 20s
+5. Duration 1s
+6. Mag Spectrograms
+7. Time Correlation
+8. Freq Correlation
+
+In summary 18 different models. 19 if we wnat to combine different representations in one model.
