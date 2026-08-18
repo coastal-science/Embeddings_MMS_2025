@@ -1,9 +1,15 @@
 #   project ignores
 data_raw/
 data/
-configs/
+configs/*
+!configs/base.yaml
 outputs/
-
+wandb/
+mlruns/
+*.pt
+*.ckpt
+*mlflow.db*
+*/mlartifacts
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -1,0 +1,28 @@
+experiment_name: hallo-encoder-collection
+mlflow_tracking_uri: null # e.g. http://localhost:5000; null = MLflow's own default
+
+preprocessor:
+  spectrogram:
+    stft:
+      n_fft: 2048
+      hop_length: 256
+      center: false
+    freq_scale: mel
+    mel:
+      n_mels: 128
+    dynamic: db
+    db:
+      ref: 1
+  annotation:
+    time_offset: 2.5
+    resample_sr: 44100
+  dataset:
+    annotations_csv: /home/noah/research/experiments/exp_0_reproduce_k_palmer_2026_results/annotations_w_calltype.csv # path to annotation csv
+    out_dir: data/preprocessor # directory the output hdf5 file goes in
+    out_file: null # filename within out_dir; null = content-hash-based name
+    max_workers: -1 # number of workers for dataset generation, compatible with negative indexing (equivalent to num_cpus - n + 1)
+  run_name: null # MLflow run name; null = MLflow auto-generates one
+
+model_trainer:
+  architecture: dummy # dummy stand-in for real training, for testing the pipeline's wiring
+  run_name: null # MLflow sub-run name; null = MLflow auto-generates one

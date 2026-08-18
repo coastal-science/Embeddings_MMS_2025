@@ -123,7 +123,37 @@ The transformation from the time domain to a time-frequency representation will 
 
 Ecoders will be trained in a self-supervised manner using variational autoencoders. 
 
+## encoder_pipeline
 
+`src/encoder_pipeline` is scaffolding for a bioacoustics ML pipeline covering
+four stages — preprocessor, model training, evaluation, and embeddings
+generation — intended to be parameterized by a single hierarchical
+Hydra/OmegaConf config (`configs/base.yaml`). The intended dependency
+boundary: each stage reads only its own section of the resolved config
+(`cfg.preprocessor`, `cfg.model_trainer`, `cfg.evaluation`,
+`cfg.embeddings`), and `evaluation`/`common` should never import from
+`model_trainer` or `embeddings`, keeping the dependency graph a strict DAG
+(`preprocessor -> model_trainer -> evaluation`, `embeddings -> evaluation`).
 
+```
+src/encoder_pipeline/
+├── config.py              # (empty) PipelineConfig composing per-stage configs
+├── preprocessor/          # (empty) spectrogram, annotation, dataset
+├── model_trainer/          # (empty) model registry, trainer, HPO
+├── evaluation/             # (empty) metric registry, evaluator
+├── embeddings/             # (empty) generate(), EmbeddingSource impls
+└── common/                 # (empty) shared registry + io helpers
+```
 
+Files are currently empty placeholders (layout only, no implementation yet).
+`tests/` has one `test_imports.py` per stage asserting its modules import
+cleanly. Dependencies are intentionally left empty in `pyproject.toml` — add
+what you need as each stage gets implemented (this repo manages deps with
+`uv`).
+
+Once implemented, a stage would run like:
+
+```bash
+python -m encoder_pipeline.model_trainer.runner model_trainer.lr=1e-4
+```
 
