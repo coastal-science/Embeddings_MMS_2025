@@ -4,6 +4,8 @@ from typing import Optional, TypeVar
 import yaml
 from pydantic import BaseModel
 
+from encoder_pipeline.common.base import StrictBaseModel
+from encoder_pipeline.embeddings.config import EmbeddingsConfig
 from encoder_pipeline.model_trainer.config import ModelTrainerConfig
 from encoder_pipeline.preprocessor.config import PreprocessorConfig
 
@@ -43,7 +45,7 @@ def load_pipeline_config(base_path: Path, override_path: Optional[Path] = None) 
     return PipelineConfig.model_validate(merged)
 
 
-class PipelineConfig(BaseModel):
+class PipelineConfig(StrictBaseModel):
     """Top-level config shared across every pipeline stage; each stage owns
     its own section, filled in as that stage gets built out."""
 
@@ -53,5 +55,10 @@ class PipelineConfig(BaseModel):
     mlflow_tracking_uri: Optional[str] = None
     """MLflow tracking server URL. If unset, MLflow's own default resolution is used."""
 
+    data_dir: str = "data"
+    """Base directory every stage writes local artifacts under, each in its
+    own subdirectory (e.g. data_dir/preprocessor, data_dir/model_trainer)."""
+
     preprocessor: PreprocessorConfig
     model_trainer: ModelTrainerConfig = ModelTrainerConfig()
+    embeddings: EmbeddingsConfig = EmbeddingsConfig()

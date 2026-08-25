@@ -2,20 +2,8 @@ from typing import Optional
 
 import librosa
 import numpy as np
-from pydantic import BaseModel
 
-
-class AnnotationConfig(BaseModel):
-    """Padding applied around each annotation's own window."""
-
-    time_offset: float = 2.5
-    """Half-width, in seconds, of the padded window kept around the
-    annotation's center."""
-
-    resample_sr: Optional[int] = None
-    """Sample rate every file is resampled to on load. None keeps each
-    file's native rate -- fine unless files vary in sample rate, in which
-    case a fixed time_offset won't produce a fixed number of frames."""
+from encoder_pipeline.preprocessor.config import AnnotationConfig
 
 
 class AudioFile:
@@ -56,8 +44,4 @@ class Annotation:
     @property
     def audio(self) -> np.ndarray:
         return self.file.slice(self.time_start, self.duration)
-
-    @property
-    def sr(self) -> int:
-        return self.file.sr
 

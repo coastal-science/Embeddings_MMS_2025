@@ -6,33 +6,13 @@ import mlflow
 import numpy as np
 import pandas as pd
 import torch
-from pydantic import BaseModel
 from sklearn.model_selection import KFold, train_test_split
 from torch.utils.data import DataLoader, Dataset, Subset
 
-
-class DataLoaderConfig(BaseModel):
-    """torch DataLoader + split params for SpectrogramDataset."""
-
-    batch_size: int = 32
-    shuffle: bool = True
-    n_folds: int = 1
-    test_size: float = 0.1
-    val_size: float = 0.1
-    split_seed: int = 10
-    num_workers: int = 0
-    col_to_group_by: Optional[str] = None
-    """Metadata column to split on, e.g. 'LocalPath' (file-level) or a
-    deployment id column -- every row sharing a value stays in the same
-    split. None splits row by row."""
+from encoder_pipeline.model_trainer.config import DataLoaderConfig
 
 
 class SpectrogramDataset(Dataset):
-    """Reads spec + a label column from an HDF5 file built by
-    encoder_pipeline.preprocessor.Dataset.build_hdf5. Opens the file lazily,
-    once per worker process, since an h5py.File isn't safe to share across
-    DataLoader worker processes."""
-
     def __init__(self, hdf5_path: str, label_col: str = "Labels") -> None:
         self.hdf5_path = hdf5_path
         self._h5: Optional[h5py.File] = None
@@ -58,13 +38,9 @@ class SpectrogramDataset(Dataset):
 
 
 def compute_splits(hdf5_path: str, config: DataLoaderConfig) -> list[dict[str, np.ndarray]]:
-    """Row indices into the HDF5's spec/metadata arrays, split per
-    config.col_to_group_by (every row sharing a value stays on the same
-    side, e.g. every row from one file or one deployment; None splits row
-    by row). n_folds>1 gives one {"train", "val"} dict per fold (KFold over
-    the unique group values); n_folds=1 gives a single {"train", "val",
-    "test"} dict, val carved out of what's left after test (val_size scaled
-    by 1 - test_size)."""
+    """
+    Helper function to compute the train / test / val splits, and do k-fold splitting
+    """
     with h5py.File(hdf5_path, "r") as h5:
         n = h5["spec"].shape[0]
         groups = h5[config.col_to_group_by].asstr()[:] if config.col_to_group_by else np.arange(n)
@@ -97,11 +73,6 @@ def compute_splits(hdf5_path: str, config: DataLoaderConfig) -> list[dict[str, n
 
 
 def save_splits(hdf5_path: str, splits: list[dict[str, np.ndarray]], out_dir: str, uid_col: str = "uid") -> str:
-    """One row per uid, one column per fold ("fold_0", "fold_1", ...)
-    holding that uid's split ("train"/"val"/"test") for that fold -- uid
-    resolved from the HDF5's uid_col so the log is readable without the
-    row-index/HDF5 mapping. Writes to out_dir/splits.csv, returning the
-    path written to."""
     with h5py.File(hdf5_path, "r") as h5:
         uids = h5[uid_col].asstr()[:]
 
@@ -118,14 +89,9 @@ def save_splits(hdf5_path: str, splits: list[dict[str, np.ndarray]], out_dir: st
     return str(out_path)
 
 
-def build_dataloaders(hdf5_path: str, config: DataLoaderConfig) -> list[dict[str, DataLoader]]:
-    """One {"train","val","test"} dict of DataLoaders for a plain split, or
-    one {"train","val"} dict per fold for k-fold. Also saves + logs the
-    split as an MLflow artifact (data/model_trainer/{run_id}/splits.csv) --
-    call this from within an active mlflow run so it lands in the right
-    place."""
+def build_dataloaders(hdf5_path: str, config: DataLoaderConfig, data_dir: str) -> list[dict[str, DataLoader]]:
     splits = compute_splits(hdf5_path, config)
-    splits_path = save_splits(hdf5_path, splits, out_dir=f"data/model_trainer/{mlflow.active_run().info.run_id}")
+    splits_path = save_splits(hdf5_path, splits, out_dir=f"{data_dir}/model_trainer/{mlflow.active_run().info.run_id}")
     mlflow.log_artifact(splits_path)
 
     dataset = SpectrogramDataset(hdf5_path)

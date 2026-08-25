@@ -4,7 +4,7 @@ import inspect
 
 from scipy.signal import ShortTimeFFT
 
-from encoder_pipeline.preprocessor.spectrogram import STFTConfig
+from encoder_pipeline.preprocessor.config import STFTConfig
 
 
 def test_stft_config_fields_match_short_time_fft_params():

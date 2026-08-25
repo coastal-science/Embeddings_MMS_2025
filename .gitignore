@@ -6,6 +6,7 @@ configs/*
 outputs/
 wandb/
 mlruns/
+mlartifacts/
 *.pt
 *.ckpt
 *mlflow.db*

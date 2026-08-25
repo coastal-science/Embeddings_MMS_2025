@@ -1,12 +1,12 @@
-"""Runs the encoder pipeline end-to-end. Each stage is skipped if its output
-is already given explicitly in the config (e.g. dataset_path), and runs
-otherwise, logging an MLflow run under config.experiment_name."""
-
 import argparse
 from pathlib import Path
 
-from encoder_pipeline.common.config import PipelineConfig, load_pipeline_config
-from encoder_pipeline.common.tracking import configure_mlflow
+import mlflow
+
+from encoder_pipeline.common.config_utils import PipelineConfig, load_pipeline_config
+from encoder_pipeline.common.mlflow_utils import configure_mlflow
+from encoder_pipeline.embeddings.runner import generate_embeddings
+from encoder_pipeline.model_trainer.data_loader import build_dataloaders
 from encoder_pipeline.model_trainer.runner import run_model_trainer
 from encoder_pipeline.preprocessor.runner import run_preprocessor
 
@@ -14,11 +14,16 @@ from encoder_pipeline.preprocessor.runner import run_preprocessor
 def run_pipeline(config: PipelineConfig) -> None:
     configure_mlflow(config)
 
-    dataset_path = run_preprocessor(config.preprocessor)
-    run_model_trainer(config.model_trainer, dataset_path)
-    # Future stages (evaluation, embeddings) plug in here the same way:
-    # check config for an explicit output, skip and reuse it if given,
-    # otherwise run the stage and log a nested run under dataset_path.
+    if config.embeddings.mlflow_id is None:
+        dataset_path = run_preprocessor(config.preprocessor, config.data_dir)
+        run_id, dataloaders = run_model_trainer(config.model_trainer, dataset_path, config.data_dir)
+    else:
+        run_id = config.embeddings.mlflow_id
+        dataset_path = mlflow.get_run(run_id).data.params["dataset_path"]
+        with mlflow.start_run(run_id=run_id):
+            dataloaders = build_dataloaders(dataset_path, config.model_trainer.dataloader, config.data_dir)
+
+    generate_embeddings(config.embeddings, dataloaders, run_id, config.data_dir)
 
 
 def main() -> None:

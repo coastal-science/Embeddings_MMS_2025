@@ -2,7 +2,8 @@ import h5py
 import numpy as np
 import pytest
 
-from encoder_pipeline.model_trainer.data_loader import DataLoaderConfig, compute_splits
+from encoder_pipeline.model_trainer.config import DataLoaderConfig
+from encoder_pipeline.model_trainer.data_loader import compute_splits
 
 
 @pytest.fixture

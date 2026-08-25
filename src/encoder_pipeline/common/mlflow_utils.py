@@ -1,6 +1,7 @@
 import mlflow
+from pathlib import Path
 
-from encoder_pipeline.common.config import PipelineConfig
+from encoder_pipeline.common.config_utils import PipelineConfig
 
 
 def configure_mlflow(config: PipelineConfig) -> None:
@@ -20,3 +21,13 @@ def flatten_params(prefix: str, obj: dict) -> dict:
         else:
             flat[full_key] = value
     return flat
+
+def download_artifact(root_path: str, run_id: str, artifact_path: str | None = None) -> Path:
+    """Downloads an artifact from mlflow if not already cached locally."""
+    local_dir = Path(root_path) / run_id
+    local_path = local_dir / artifact_path if artifact_path else local_dir
+    if local_path.exists():
+        return local_path
+    return Path(mlflow.artifacts.download_artifacts(
+        run_id=run_id, artifact_path=artifact_path, dst_path=str(local_dir),
+    ))

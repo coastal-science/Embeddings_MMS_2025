@@ -1,1 +1,0 @@
-"""Concrete `EmbeddingSource` implementations."""

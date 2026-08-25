@@ -1,21 +1,17 @@
 import argparse
+import pickle
 from pathlib import Path
 
 import mlflow
 
-from encoder_pipeline.common.config import load_pipeline_config
-from encoder_pipeline.common.tracking import configure_mlflow, flatten_params
+from encoder_pipeline.common.config_utils import load_pipeline_config
+from encoder_pipeline.common.mlflow_utils import configure_mlflow, flatten_params
 from encoder_pipeline.preprocessor.config import PreprocessorConfig
 from encoder_pipeline.preprocessor.dataset import Dataset
 
 
-def run_preprocessor(config: PreprocessorConfig) -> str:
-    """build_dataset wrapped in an MLflow run: logs every preprocessor
-    param plus the resulting dataset_path, so later stages can look this run
-    up by that path. If a file matching this exact config's content hash
-    already exists, reuses the run that originally produced it instead of
-    creating a duplicate. Caller is responsible for mlflow.set_experiment."""
-    dataset = Dataset(config.spectrogram, config.annotation, config.dataset, config.run_name)
+def run_preprocessor(config: PreprocessorConfig, data_dir: str) -> str:
+    dataset = Dataset(config.spectrogram, config.audio_file, config.annotation, config.dataset, data_dir, config.run_name)
     dataset.build_hdf5()
     # search if the hdf5 file has been logged to mlflow, by content hash (ignoring the timestamp)
     content_hash = Path(dataset.out_file).stem.rsplit("_", 1)[0]
@@ -28,6 +24,11 @@ def run_preprocessor(config: PreprocessorConfig) -> str:
         with mlflow.start_run(run_name=config.run_name):
             mlflow.log_params(flatten_params("preprocessor", config.model_dump()))
             mlflow.log_param("dataset_path", dataset.out_file)
+            spec_config_path = Path(f"{data_dir}/preprocessor/{mlflow.active_run().info.run_id}/spectrogram_config.pkl")
+            spec_config_path.parent.mkdir(parents=True, exist_ok=True)
+            with spec_config_path.open("wb") as f:
+                pickle.dump(config.spectrogram, f)
+            mlflow.log_artifact(str(spec_config_path))
             print(f"run_id={mlflow.active_run().info.run_id} dataset_path={dataset.out_file}")
     return dataset.out_file
 
@@ -40,7 +41,7 @@ def main() -> None:
     pipeline_config = load_pipeline_config(args.config, args.override)
 
     configure_mlflow(pipeline_config)
-    run_preprocessor(pipeline_config.preprocessor)
+    run_preprocessor(pipeline_config.preprocessor, pipeline_config.data_dir)
 
 
 if __name__ == "__main__":
