@@ -74,7 +74,8 @@ def compute_splits(hdf5_path: str, config: DataLoaderConfig) -> list[dict[str, n
 
 def save_splits(hdf5_path: str, splits: list[dict[str, np.ndarray]], out_dir: str, uid_col: str = "uid") -> str:
     with h5py.File(hdf5_path, "r") as h5:
-        uids = h5[uid_col].asstr()[:]
+        dset = h5[uid_col]
+        uids = dset.asstr()[:] if h5py.check_string_dtype(dset.dtype) else dset[:]
 
     df = pd.DataFrame({"uid": uids})
     for fold, split in enumerate(splits):

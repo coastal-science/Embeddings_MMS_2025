@@ -179,7 +179,7 @@ def build_annotations_with_calltype(
         background = subsample_by_label(background, TEST_N_PER_LABEL)
 
     result = pd.concat([all_anno, background], ignore_index=True)
-    result["uid"] = result.index.astype(str)  # row-level id the model_trainer pipeline requires (DatasetConfig.uid_col)
+    result["uid"] = result.index  # row-level id the model_trainer pipeline requires (DatasetConfig.uid_col)
     return result
 
 
