@@ -7,7 +7,7 @@ def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, y_score: np.n
     """Macro-averaged precision/recall/F1/PR-AUC over y_true's classes.
     y_pred is the hard class prediction; y_score is (n_samples, n_classes)
     predicted probabilities, needed for PR-AUC."""
-    classes = np.unique(y_true)
+    classes = np.arange(y_score.shape[1])  # every class the model can output, not just ones present in this split
     y_true_bin = label_binarize(y_true, classes=classes)
     if y_true_bin.shape[1] == 1:
         y_true_bin = np.hstack([1 - y_true_bin, y_true_bin])

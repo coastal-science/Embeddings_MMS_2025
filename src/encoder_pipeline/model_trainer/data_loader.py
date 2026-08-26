@@ -13,13 +13,15 @@ from encoder_pipeline.model_trainer.config import DataLoaderConfig
 
 
 class SpectrogramDataset(Dataset):
-    def __init__(self, hdf5_path: str, label_col: str = "Labels") -> None:
+    def __init__(self, hdf5_path: str, label_col: str = "Labels", class_label_map: Optional[dict[str, str]] = None) -> None:
         self.hdf5_path = hdf5_path
         self._h5: Optional[h5py.File] = None
 
         with h5py.File(hdf5_path, "r") as h5:
             self.length = h5["spec"].shape[0]
             labels = h5[label_col].asstr()[:]
+        if class_label_map is not None:
+            labels = [class_label_map.get(label, label) for label in labels]
         self.classes = sorted(set(labels))
         self.label_to_idx = {label: i for i, label in enumerate(self.classes)}
         self.labels = [self.label_to_idx[label] for label in labels]
@@ -72,6 +74,29 @@ def compute_splits(hdf5_path: str, config: DataLoaderConfig) -> list[dict[str, n
     return [{"train": row_idx(train_groups), "val": row_idx(val_groups), "test": row_idx(test_groups)}]
 
 
+def load_saved_splits(hdf5_path: str, splits_path: str, uid_col: str = "uid") -> list[dict[str, np.ndarray]]:
+    """Loads a previously-saved splits.csv and maps its uid -> fold_N
+    assignments onto this hdf5's row indices (by uid value, not row order,
+    since a rebuilt hdf5 isn't guaranteed to keep the same row order)."""
+    with h5py.File(hdf5_path, "r") as h5:
+        dset = h5[uid_col]
+        uids = dset.asstr()[:] if h5py.check_string_dtype(dset.dtype) else dset[:]
+    uid_to_row = {uid: i for i, uid in enumerate(uids)}
+
+    saved = pd.read_csv(splits_path)
+    fold_cols = sorted((c for c in saved.columns if c.startswith("fold_")), key=lambda c: int(c.split("_")[1]))
+
+    splits = []
+    for fold_col in fold_cols:
+        split: dict[str, list[int]] = {}
+        for uid, split_name in zip(saved["uid"], saved[fold_col]):
+            if pd.isna(split_name):
+                continue
+            split.setdefault(split_name, []).append(uid_to_row[uid])
+        splits.append({name: np.array(idx) for name, idx in split.items()})
+    return splits
+
+
 def save_splits(hdf5_path: str, splits: list[dict[str, np.ndarray]], out_dir: str, uid_col: str = "uid") -> str:
     with h5py.File(hdf5_path, "r") as h5:
         dset = h5[uid_col]
@@ -91,11 +116,11 @@ def save_splits(hdf5_path: str, splits: list[dict[str, np.ndarray]], out_dir: st
 
 
 def build_dataloaders(hdf5_path: str, config: DataLoaderConfig, data_dir: str) -> list[dict[str, DataLoader]]:
-    splits = compute_splits(hdf5_path, config)
+    splits = load_saved_splits(hdf5_path, config.splits_path) if config.splits_path else compute_splits(hdf5_path, config)
     splits_path = save_splits(hdf5_path, splits, out_dir=f"{data_dir}/model_trainer/{mlflow.active_run().info.run_id}")
     mlflow.log_artifact(splits_path)
 
-    dataset = SpectrogramDataset(hdf5_path)
+    dataset = SpectrogramDataset(hdf5_path, class_label_map=config.class_label_map)
     return [
         {
             name: DataLoader(Subset(dataset, idx), batch_size=config.batch_size, shuffle=config.shuffle, num_workers=config.num_workers)

@@ -23,6 +23,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from encoder_pipeline.common.mlflow_utils import configure_datasets_mlflow
+from reconstruct_splits import reconstruct_splits
 
 DROP_COLS = {"Unnamed: 0"}
 MERGE_COLS = ["Soundfile", "FileBeginSec", "FileEndSec", "CallType", "CalltypeCategory", "CalltypeHasQ", "HasQ"]
@@ -241,6 +242,14 @@ def main() -> None:
         "--test", action="store_true",
         help=f"Subsample to {TEST_N_PER_LABEL} rows per label, for fast iteration.",
     )
+    parser.add_argument(
+        "--reconstruct-splits", action="store_true",
+        help="Also reconstruct K. Palmer's train/holdout split into reconstructed_splits/splits.csv.",
+    )
+    parser.add_argument(
+        "--kw-acoustic-classification-dir", type=Path, default=Path("/home/noah/KillerWhaleAcousticClassification"),
+        help="Base dir holding Results/birdnet01_DCLDE_eval.csv and BirdNET Models/, used only when --reconstruct-splits is set.",
+    )
     args = parser.parse_args()
 
     check_uncommitted_changes(script_dir)
@@ -278,6 +287,15 @@ def main() -> None:
         mlflow.log_metric("n_rows", len(all_anno))
         mlflow.log_metric("n_background_rows", int((all_anno["Labels"] == BACKGROUND_LABEL).sum()))
         print(f"Saved {len(all_anno):,} rows, {len(all_anno.columns)} columns -> {out_path}")
+
+        if args.reconstruct_splits:
+            splits_dir = run_dir / "reconstructed_splits"
+            reconstruct_splits(
+                all_anno, splits_dir,
+                args.kw_acoustic_classification_dir / "Results" / "birdnet01_DCLDE_eval.csv",
+                args.kw_acoustic_classification_dir / "BirdNET Models",
+            )
+            mlflow.log_param("splits_path", str(splits_dir / "splits.csv"))
 
 
 if __name__ == "__main__":

@@ -19,6 +19,13 @@ class DataLoaderConfig(StrictBaseModel):
     col_to_group_by: Optional[str] = None
     """Metadata column to split on, e.g. 'LocalPath' (file-level) or a
     deployment id column"""
+    class_label_map: Optional[dict[str, str]] = None
+    """Maps raw Labels values to collapsed labels before SpectrogramDataset
+    builds its class list, e.g. {"SRKW": "KW", "TKW": "KW"}. Unmapped labels
+    pass through unchanged."""
+    splits_path: Optional[str] = None
+    """Local path to a previously-logged splits.csv to reuse instead of
+    computing a fresh split. Unset = compute_splits as usual."""
 class SpectrogramSSLAugmentConfig(StrictBaseModel):
     time_mask_frac: float = 0.15
     freq_mask_frac: float = 0.15
@@ -52,8 +59,6 @@ class ClassifierConfig(StrictBaseModel):
     """Backbone + linear classification head"""
 
     backbone_name: backbone = "resnet18"
-    num_classes: int
-    """Must match the training dataset's label cardinality (SpectrogramDataset.classes)."""
     epochs: int = 10
     lr: float = 3e-4
     weight_decay: float = 1e-6

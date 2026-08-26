@@ -59,10 +59,10 @@ class SimCLRModel(nn.Module):
 
 
 class ClassifierModel(nn.Module):
-    def __init__(self, config: ClassifierConfig) -> None:
+    def __init__(self, config: ClassifierConfig, num_classes: int) -> None:
         super().__init__()
         self.backbone = build_backbone(config.backbone_name)
-        self.classifier = nn.Linear(self.backbone.out_features, config.num_classes)
+        self.classifier = nn.Linear(self.backbone.out_features, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.backbone(x))

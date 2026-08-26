@@ -94,10 +94,10 @@ class SimCLRTrainer(Trainer):
 
 
 class ClassifierTrainer(Trainer):
-    def __init__(self, config: ClassifierConfig) -> None:
+    def __init__(self, config: ClassifierConfig, num_classes: int) -> None:
         self.device = torch.device(config.device)
         self.epochs = config.epochs
-        self.model = ClassifierModel(config).to(self.device)
+        self.model = ClassifierModel(config, num_classes).to(self.device)
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
@@ -142,12 +142,10 @@ def train_model(
 ) -> None:
     if config.paradigm == "simclr":
         assert config.simclr is not None, "model_trainer.simclr config is required when paradigm is 'simclr'"
-        trainer_config = config.simclr
-        trainer = SimCLRTrainer
+        for fold, loaders in enumerate(dataloaders):
+            SimCLRTrainer(config.simclr).fit(loaders, fold, data_dir, spectrogram_config)
     else:
         assert config.classifier is not None, "model_trainer.classifier config is required when paradigm is 'classifier'"
-        trainer_config = config.classifier
-        trainer = ClassifierTrainer
-
-    for fold, loaders in enumerate(dataloaders):
-        trainer(trainer_config).fit(loaders, fold, data_dir, spectrogram_config)
+        num_classes = len(next(iter(dataloaders[0].values())).dataset.dataset.classes)
+        for fold, loaders in enumerate(dataloaders):
+            ClassifierTrainer(config.classifier, num_classes).fit(loaders, fold, data_dir, spectrogram_config)
