@@ -33,6 +33,7 @@ PARENT_CSV_NAMES = [
 ]
 AUDIO_EXTENSIONS = (".wav", ".flac")
 BACKGROUND_LABEL = "Background"
+DATASET_NAME = "DCLDE_2027"
 
 
 def build_local_audio_index(audio_root: Path) -> dict[str, str]:
@@ -225,7 +226,7 @@ def main() -> None:
     run_dir = args.runs_dir / time.strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True)
 
-    configure_datasets_mlflow(args.mlflow_tracking_uri)
+    configure_datasets_mlflow(DATASET_NAME, args.mlflow_tracking_uri)
     with mlflow.start_run(run_name=run_dir.name):
         mlflow.log_params({
             "dclde_root": str(args.dclde_root),
