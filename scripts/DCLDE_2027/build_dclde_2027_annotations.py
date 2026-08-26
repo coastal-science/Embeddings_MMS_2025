@@ -178,7 +178,9 @@ def build_annotations_with_calltype(
     if test:
         background = subsample_by_label(background, TEST_N_PER_LABEL)
 
-    return pd.concat([all_anno, background], ignore_index=True)
+    result = pd.concat([all_anno, background], ignore_index=True)
+    result["uid"] = result.index.astype(str)  # row-level id the model_trainer pipeline requires (DatasetConfig.uid_col)
+    return result
 
 
 def run_create_parent_annotations(script_path: Path, output_dir: Path) -> None:
