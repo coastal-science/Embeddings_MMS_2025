@@ -111,7 +111,10 @@ class SpectrogramConfig(StrictBaseModel):
 
 class DatasetConfig(StrictBaseModel):
 
-    annotations_csv: str
+    annotations_csv: Optional[str] = None
+    """Path to the annotations CSV. Exactly one of this or annotations_mlflow_id."""
+    annotations_mlflow_id: Optional[str] = None
+    """MLflow run_id to resolve annotations_csv from (its 'annotations_path' param). Exactly one of this or annotations_csv."""
     max_workers: Optional[int] = None
     """None or a positive int, same as ProcessPoolExecutor; also accepts
     joblib-style negative values (-1 = all cores, -2 = all but one, ...)."""

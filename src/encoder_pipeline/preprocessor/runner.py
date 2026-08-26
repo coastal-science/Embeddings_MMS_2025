@@ -6,11 +6,23 @@ import mlflow
 
 from encoder_pipeline.common.config_utils import load_pipeline_config
 from encoder_pipeline.common.mlflow_utils import configure_mlflow, flatten_params
-from encoder_pipeline.preprocessor.config import PreprocessorConfig
+from encoder_pipeline.preprocessor.config import DatasetConfig, PreprocessorConfig
 from encoder_pipeline.preprocessor.dataset import Dataset
 
 
+def resolve_annotations_csv(dataset_config: DatasetConfig) -> str:
+    """Returns annotations_csv directly, or resolves it via annotations_mlflow_id's logged 'annotations_path' param."""
+    if dataset_config.annotations_csv is not None and dataset_config.annotations_mlflow_id is not None:
+        raise ValueError("set only one of dataset.annotations_csv / dataset.annotations_mlflow_id, not both")
+    if dataset_config.annotations_mlflow_id is not None:
+        return mlflow.get_run(dataset_config.annotations_mlflow_id).data.params["annotations_path"]
+    if dataset_config.annotations_csv is not None:
+        return dataset_config.annotations_csv
+    raise ValueError("one of dataset.annotations_csv / dataset.annotations_mlflow_id must be set")
+
+
 def run_preprocessor(config: PreprocessorConfig, data_dir: str) -> str:
+    config.dataset.annotations_csv = resolve_annotations_csv(config.dataset)
     dataset = Dataset(config.spectrogram, config.audio_file, config.annotation, config.dataset, data_dir, config.run_name)
     dataset.build_hdf5()
     # search if the hdf5 file has been logged to mlflow, by content hash (ignoring the timestamp)

@@ -10,6 +10,7 @@ mlartifacts/
 *.pt
 *.ckpt
 *mlflow.db*
+scripts/DCLDE_2027/experimental/*.csv
 */mlartifacts
 # Byte-compiled / optimized / DLL files
 __pycache__/

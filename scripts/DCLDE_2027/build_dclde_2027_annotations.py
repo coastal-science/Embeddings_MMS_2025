@@ -35,6 +35,7 @@ AUDIO_EXTENSIONS = (".wav", ".flac")
 BACKGROUND_LABEL = "Background"
 DATASET_NAME = "DCLDE_2027"
 MLFLOW_EXPERIMENT_NAME = f"Datasets/{DATASET_NAME}"
+TEST_N_PER_LABEL = 10
 
 
 def build_local_audio_index(audio_root: Path) -> dict[str, str]:
@@ -60,7 +61,6 @@ def load_parent_calltypes(raw_data_dir: Path) -> pd.DataFrame:
 
 
 def derive_labels(df: pd.DataFrame) -> pd.Series:
-    """Collapse ClassSpecies/Ecotype/KW into the coarse Background/HW/SRKW/TKW/KW_und label."""
     labels = df["ClassSpecies"]
     labels[df["Ecotype"].notna()] = df["Ecotype"][df["Ecotype"].notna()]
     labels[(df["KW"] == 1) & df["Ecotype"].isna()] = "KW_und"
@@ -131,12 +131,21 @@ def select_background_windows(
     return to_annotations_schema(candidates, columns, method)
 
 
+def subsample_by_label(df: pd.DataFrame, n_per_label: int, random_state: int = 0) -> pd.DataFrame:
+    """Keeps at most n_per_label rows per Labels value."""
+    groups = [group.sample(n=min(n_per_label, len(group)), random_state=random_state) for _, group in df.groupby("Labels")]
+    return pd.concat(groups, ignore_index=True)
+
+
 def build_annotations_with_calltype(
     annotations_path: Path, audio_root: Path, raw_data_dir: Path, background_method: str,
     background_window_duration: float, background_hop_duration: float, background_event_buffer: float,
+    test: bool = False,
 ) -> pd.DataFrame:
     """Join the root annotations with parent-CSV call types and derived
-    columns, then append background_method-selected "Background" rows."""
+    columns, then append background_method-selected "Background" rows. If
+    test, subsamples to TEST_N_PER_LABEL rows per label before (and after)
+    background selection, for fast iteration."""
 
     audio_index = build_local_audio_index(audio_root)
 
@@ -159,10 +168,16 @@ def build_annotations_with_calltype(
     all_anno["HasQ"] = all_anno["HasQ"].fillna(False)
     all_anno["BackgroundMethod"] = np.nan  # real annotations weren't algorithmically generated
 
+    if test:
+        all_anno = subsample_by_label(all_anno, TEST_N_PER_LABEL)
+
     background = select_background_windows(
         all_anno, background_method, all_anno.columns.tolist(),
         background_window_duration, background_hop_duration, background_event_buffer,
     )
+    if test:
+        background = subsample_by_label(background, TEST_N_PER_LABEL)
+
     return pd.concat([all_anno, background], ignore_index=True)
 
 
@@ -220,11 +235,16 @@ def main() -> None:
     parser.add_argument("--background-window-duration", type=float, default=5.0)
     parser.add_argument("--background-hop-duration", type=float, default=2.5)
     parser.add_argument("--background-event-buffer", type=float, default=10.0)
+    parser.add_argument(
+        "--test", action="store_true",
+        help=f"Subsample to {TEST_N_PER_LABEL} rows per label, for fast iteration.",
+    )
     args = parser.parse_args()
 
     check_uncommitted_changes(script_dir)
 
-    run_dir = args.data_dir / time.strftime("%Y%m%d_%H%M%S")
+    timestamp = time.strftime("%Y%m%d_%H%M%S") + ("_test" if args.test else "")
+    run_dir = args.data_dir / timestamp
     run_dir.mkdir(parents=True)
 
     configure_datasets_mlflow(MLFLOW_EXPERIMENT_NAME, args.mlflow_tracking_uri)
@@ -236,6 +256,7 @@ def main() -> None:
             "background_window_duration": args.background_window_duration,
             "background_hop_duration": args.background_hop_duration,
             "background_event_buffer": args.background_event_buffer,
+            "test": args.test,
             "git_commit": git_commit(script_dir),
             "command": reconstruct_command(Path(__file__).resolve(), args),
         })
@@ -246,6 +267,7 @@ def main() -> None:
         all_anno = build_annotations_with_calltype(
             annotations_path, args.dclde_root, run_dir, args.background_method,
             args.background_window_duration, args.background_hop_duration, args.background_event_buffer,
+            args.test,
         )
 
         out_path = run_dir / "annotations.csv"
