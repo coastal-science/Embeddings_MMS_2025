@@ -34,6 +34,7 @@ PARENT_CSV_NAMES = [
 AUDIO_EXTENSIONS = (".wav", ".flac")
 BACKGROUND_LABEL = "Background"
 DATASET_NAME = "DCLDE_2027"
+MLFLOW_EXPERIMENT_NAME = f"Datasets/{DATASET_NAME}"
 
 
 def build_local_audio_index(audio_root: Path) -> dict[str, str]:
@@ -210,7 +211,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dclde-root", type=Path, default=Path("/data/DCLDE_2027/dclde_2027_killer_whales"))
-    parser.add_argument("--runs-dir", type=Path, default=repo_root / "data_raw" / "DCLDE_2027" / "runs")
+    parser.add_argument("--data-dir", type=Path, default=repo_root / "data_raw" / DATASET_NAME)
     parser.add_argument("--mlflow-tracking-uri", type=str, default=None)
     parser.add_argument(
         "--background-method", type=str, default="naive", choices=["naive"],
@@ -223,10 +224,10 @@ def main() -> None:
 
     check_uncommitted_changes(script_dir)
 
-    run_dir = args.runs_dir / time.strftime("%Y%m%d_%H%M%S")
+    run_dir = args.data_dir / time.strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True)
 
-    configure_datasets_mlflow(DATASET_NAME, args.mlflow_tracking_uri)
+    configure_datasets_mlflow(MLFLOW_EXPERIMENT_NAME, args.mlflow_tracking_uri)
     with mlflow.start_run(run_name=run_dir.name):
         mlflow.log_params({
             "dclde_root": str(args.dclde_root),

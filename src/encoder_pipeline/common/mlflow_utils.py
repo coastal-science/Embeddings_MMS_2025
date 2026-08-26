@@ -5,9 +5,6 @@ from pathlib import Path
 
 from encoder_pipeline.common.config_utils import PipelineConfig
 
-DATASETS_EXPERIMENT_ROOT = "Datasets"
-
-
 def configure_mlflow(config: PipelineConfig) -> None:
     """Sets the MLflow tracking URI (if given) and active experiment."""
     if config.mlflow_tracking_uri is not None:
@@ -15,16 +12,15 @@ def configure_mlflow(config: PipelineConfig) -> None:
     mlflow.set_experiment(config.experiment_name)
 
 
-def configure_datasets_mlflow(dataset_name: str, mlflow_tracking_uri: Optional[str] = None) -> None:
-    """Points MLflow at 'Datasets/<dataset_name>', used by every
-    dataset-generation script (e.g. build_dclde_2027_annotations.py sets
-    dataset_name="DCLDE_2027") so their runs are grouped by dataset -- MLflow
-    renders '/' in experiment names as a folder tree -- giving
-    experiments/Datasets/<dataset_name>/<run name, e.g. a timestamp>, separate
-    from training experiments."""
+def configure_datasets_mlflow(experiment_name: str, mlflow_tracking_uri: Optional[str] = None) -> None:
+    """Sets the MLflow tracking URI (if given) and active experiment, for
+    dataset-generation scripts (e.g. build_dclde_2027_annotations.py) that
+    aren't driven by a full PipelineConfig. Callers own their own experiment
+    path, e.g. "Datasets/DCLDE_2027" -- MLflow renders '/' in experiment names
+    as a folder tree -- separate from training experiments."""
     if mlflow_tracking_uri is not None:
         mlflow.set_tracking_uri(mlflow_tracking_uri)
-    mlflow.set_experiment(f"{DATASETS_EXPERIMENT_ROOT}/{dataset_name}")
+    mlflow.set_experiment(experiment_name)
 
 
 def flatten_params(prefix: str, obj: dict) -> dict:
