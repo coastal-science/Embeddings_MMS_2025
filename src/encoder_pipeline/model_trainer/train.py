@@ -8,12 +8,16 @@ import numpy as np
 import torch
 import torch.nn as nn
 from lightly.loss import NTXentLoss
+from lightly.models.utils import update_momentum
+from lightly.utils.scheduler import cosine_schedule
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from encoder_pipeline.evaluation.metrics import classification_metrics
-from encoder_pipeline.model_trainer.config import ClassifierConfig, ModelTrainerConfig, SimCLRConfig
-from encoder_pipeline.model_trainer.models import ClassifierModel, SimCLRModel
-from encoder_pipeline.model_trainer.augment import SpectrogramSSLAugment
+from encoder_pipeline.model_trainer.config import (
+    ClassifierConfig, MoCoConfig, MoCoV3Config, ModelTrainerConfig, SimCLRConfig,
+)
+from encoder_pipeline.model_trainer.models import ClassifierModel, MoCoModel, MoCoV3Model, SimCLRModel
+from encoder_pipeline.model_trainer.augment import SpectrogramClassifierAugment, SpectrogramSSLAugment
 from encoder_pipeline.preprocessor.config import SpectrogramConfig
 
 
@@ -93,11 +97,85 @@ class SimCLRTrainer(Trainer):
         return total_loss / len(loader.dataset)
 
 
+class MoCoTrainer(Trainer):
+    def __init__(self, config: MoCoConfig) -> None:
+        self.device = torch.device(config.device)
+        self.epochs = config.epochs
+        self.momentum = config.momentum
+        self.model = MoCoModel(config).to(self.device)
+        self.augment = SpectrogramSSLAugment(config.augment)
+        self.criterion = NTXentLoss(
+            temperature=config.temperature,
+            memory_bank_size=(config.memory_bank_size, config.projection_out_dim),
+        )
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
+    def _run_epoch(self, loader: DataLoader, train: bool) -> float:
+        self.model.train(train)
+        total_loss = 0.0
+        for specs, _labels in loader:
+            specs = specs.to(self.device)
+            query_view = self.augment(specs).unsqueeze(1)
+            key_view = self.augment(specs).unsqueeze(1)
+            with torch.set_grad_enabled(train):
+                if train:
+                    update_momentum(self.model.backbone, self.model.backbone_momentum, m=self.momentum)
+                    update_momentum(self.model.projection_head, self.model.projection_head_momentum, m=self.momentum)
+                query = self.model(query_view)
+                key = self.model.forward_momentum(key_view)
+                loss = self.criterion(query, key)
+                if train:
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+            total_loss += loss.item() * specs.size(0)
+        return total_loss / len(loader.dataset)
+
+
+class MoCoV3Trainer(Trainer):
+    def __init__(self, config: MoCoV3Config) -> None:
+        self.device = torch.device(config.device)
+        self.epochs = config.epochs
+        self.momentum_base = config.momentum
+        self.model = MoCoV3Model(config).to(self.device)
+        self.augment = SpectrogramSSLAugment(config.augment)
+        self.criterion = NTXentLoss(temperature=config.temperature)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+        self._step = 0
+        self._total_steps = 0
+
+    def _run_epoch(self, loader: DataLoader, train: bool) -> float:
+        self.model.train(train)
+        if train and self._total_steps == 0:
+            self._total_steps = self.epochs * len(loader)
+        total_loss = 0.0
+        for specs, _labels in loader:
+            specs = specs.to(self.device)
+            view0 = self.augment(specs).unsqueeze(1)
+            view1 = self.augment(specs).unsqueeze(1)
+            with torch.set_grad_enabled(train):
+                if train:
+                    momentum = cosine_schedule(self._step, self._total_steps, self.momentum_base, 1.0)
+                    update_momentum(self.model.backbone, self.model.backbone_momentum, m=momentum)
+                    update_momentum(self.model.projection_head, self.model.projection_head_momentum, m=momentum)
+                    self._step += 1
+                query0, query1 = self.model(view0), self.model(view1)
+                key0, key1 = self.model.forward_momentum(view0), self.model.forward_momentum(view1)
+                loss = 0.5 * (self.criterion(query0, key1) + self.criterion(query1, key0))
+                if train:
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+            total_loss += loss.item() * specs.size(0)
+        return total_loss / len(loader.dataset)
+
+
 class ClassifierTrainer(Trainer):
     def __init__(self, config: ClassifierConfig, num_classes: int) -> None:
         self.device = torch.device(config.device)
         self.epochs = config.epochs
         self.model = ClassifierModel(config, num_classes).to(self.device)
+        self.augment = SpectrogramClassifierAugment(config.augment)
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
@@ -105,7 +183,10 @@ class ClassifierTrainer(Trainer):
         self.model.train(train)
         total_loss = 0.0
         for specs, labels in loader:
-            specs, labels = specs.to(self.device).unsqueeze(1), labels.to(self.device)
+            specs = specs.to(self.device)
+            if train:
+                specs = self.augment(specs)
+            specs, labels = specs.unsqueeze(1), labels.to(self.device)
             with torch.set_grad_enabled(train):
                 logits = self.model(specs)
                 loss = self.criterion(logits, labels)
@@ -144,6 +225,14 @@ def train_model(
         assert config.simclr is not None, "model_trainer.simclr config is required when paradigm is 'simclr'"
         for fold, loaders in enumerate(dataloaders):
             SimCLRTrainer(config.simclr).fit(loaders, fold, data_dir, spectrogram_config)
+    elif config.paradigm == "moco":
+        assert config.moco is not None, "model_trainer.moco config is required when paradigm is 'moco'"
+        for fold, loaders in enumerate(dataloaders):
+            MoCoTrainer(config.moco).fit(loaders, fold, data_dir, spectrogram_config)
+    elif config.paradigm == "moco_v3":
+        assert config.moco_v3 is not None, "model_trainer.moco_v3 config is required when paradigm is 'moco_v3'"
+        for fold, loaders in enumerate(dataloaders):
+            MoCoV3Trainer(config.moco_v3).fit(loaders, fold, data_dir, spectrogram_config)
     else:
         assert config.classifier is not None, "model_trainer.classifier config is required when paradigm is 'classifier'"
         num_classes = len(next(iter(dataloaders[0].values())).dataset.dataset.classes)

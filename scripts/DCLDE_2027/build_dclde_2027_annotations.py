@@ -23,7 +23,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from encoder_pipeline.common.mlflow_utils import configure_datasets_mlflow
-from reconstruct_splits import reconstruct_splits
+from reproduce_k_palmer_2026_population_level.generate_splits_files import generate_splits_files
 
 DROP_COLS = {"Unnamed: 0"}
 MERGE_COLS = ["Soundfile", "FileBeginSec", "FileEndSec", "CallType", "CalltypeCategory", "CalltypeHasQ", "HasQ"]
@@ -180,6 +180,7 @@ def build_annotations_with_calltype(
         background = subsample_by_label(background, TEST_N_PER_LABEL)
 
     result = pd.concat([all_anno, background], ignore_index=True)
+    result = result.drop_duplicates(ignore_index=True)  # source Annotations.csv + parent merge emit some exact-dup rows
     result["uid"] = result.index  # row-level id the model_trainer pipeline requires (DatasetConfig.uid_col)
     return result
 
@@ -244,11 +245,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--reconstruct-splits", action="store_true",
-        help="Also reconstruct K. Palmer's train/holdout split into reconstructed_splits/splits.csv.",
+        help="Also write per-model splits_<name>.csv files into <run_dir>/reconstructed_splits/.",
     )
     parser.add_argument(
-        "--kw-acoustic-classification-dir", type=Path, default=Path("/home/noah/KillerWhaleAcousticClassification"),
-        help="Base dir holding Results/birdnet01_DCLDE_eval.csv and BirdNET Models/, used only when --reconstruct-splits is set.",
+        "--reconstructed-splits-dir", type=Path,
+        default=script_dir / "reproduce_k_palmer_2026_population_level" / "reconstructed_splits",
+        help="Dir with K. Palmer's reconstructed train_*.csv / full_train.csv / holdout_eval.csv, used only when --reconstruct-splits is set.",
     )
     args = parser.parse_args()
 
@@ -290,12 +292,8 @@ def main() -> None:
 
         if args.reconstruct_splits:
             splits_dir = run_dir / "reconstructed_splits"
-            reconstruct_splits(
-                all_anno, splits_dir,
-                args.kw_acoustic_classification_dir / "Results" / "birdnet01_DCLDE_eval.csv",
-                args.kw_acoustic_classification_dir / "BirdNET Models",
-            )
-            mlflow.log_param("splits_path", str(splits_dir / "splits.csv"))
+            generate_splits_files(all_anno, splits_dir, args.reconstructed_splits_dir)
+            mlflow.log_param("splits_path", str(splits_dir))
 
 
 if __name__ == "__main__":

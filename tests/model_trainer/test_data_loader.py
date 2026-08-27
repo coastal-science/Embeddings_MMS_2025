@@ -1,9 +1,10 @@
 import h5py
 import numpy as np
 import pytest
+import torch
 
 from encoder_pipeline.model_trainer.config import DataLoaderConfig
-from encoder_pipeline.model_trainer.data_loader import compute_splits
+from encoder_pipeline.model_trainer.data_loader import class_balanced_sampler, compute_splits
 
 
 @pytest.fixture
@@ -91,3 +92,22 @@ def test_no_col_to_group_by_splits_row_by_row(hdf5_path):
 
     assert len(split["test"]) == 2
     assert len(split["train"]) + len(split["test"]) == 8
+
+
+def test_class_balanced_sampler_evens_out_a_skewed_train_split():
+    labels = [0] * 90 + [1] * 10
+    subset_idx = np.arange(len(labels))
+    sampler = class_balanced_sampler(labels, subset_idx)
+
+    torch.manual_seed(0)
+    drawn = np.asarray(labels)[list(sampler)]
+    assert len(drawn) == len(subset_idx)
+    assert 0.4 < drawn.mean() < 0.6  # both classes now roughly equally represented
+
+
+def test_class_balanced_sampler_indexes_into_subset_positions_only():
+    labels = [0, 1, 0, 1, 0, 1, 0, 1]
+    subset_idx = np.array([1, 3, 5])  # all class 1
+    drawn = list(class_balanced_sampler(labels, subset_idx))
+
+    assert all(0 <= i < len(subset_idx) for i in drawn)

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.model_selection import KFold, train_test_split
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset, Subset, WeightedRandomSampler
 
 from encoder_pipeline.model_trainer.config import DataLoaderConfig
 
@@ -115,16 +115,29 @@ def save_splits(hdf5_path: str, splits: list[dict[str, np.ndarray]], out_dir: st
     return str(out_path)
 
 
+def class_balanced_sampler(labels: list[int], subset_idx: np.ndarray) -> WeightedRandomSampler:
+    """WeightedRandomSampler over subset_idx positions that draws every class
+    with equal probability, oversampling minority classes with replacement."""
+    subset_labels = np.asarray(labels)[subset_idx]
+    weights = 1.0 / np.bincount(subset_labels)[subset_labels]
+    return WeightedRandomSampler(torch.as_tensor(weights, dtype=torch.double), len(subset_idx), replacement=True)
+
+
 def build_dataloaders(hdf5_path: str, config: DataLoaderConfig, data_dir: str) -> list[dict[str, DataLoader]]:
     splits = load_saved_splits(hdf5_path, config.splits_path) if config.splits_path else compute_splits(hdf5_path, config)
     splits_path = save_splits(hdf5_path, splits, out_dir=f"{data_dir}/model_trainer/{mlflow.active_run().info.run_id}")
     mlflow.log_artifact(splits_path)
 
     dataset = SpectrogramDataset(hdf5_path, class_label_map=config.class_label_map)
-    return [
-        {
-            name: DataLoader(Subset(dataset, idx), batch_size=config.batch_size, shuffle=config.shuffle, num_workers=config.num_workers)
-            for name, idx in split.items()
-        }
-        for split in splits
-    ]
+
+    def loader(name: str, idx: np.ndarray) -> DataLoader:
+        if name == "train" and config.oversample:
+            return DataLoader(
+                Subset(dataset, idx), batch_size=config.batch_size,
+                sampler=class_balanced_sampler(dataset.labels, idx), num_workers=config.num_workers,
+            )
+        return DataLoader(
+            Subset(dataset, idx), batch_size=config.batch_size, shuffle=config.shuffle, num_workers=config.num_workers,
+        )
+
+    return [{name: loader(name, idx) for name, idx in split.items()} for split in splits]

@@ -1,9 +1,14 @@
+import copy
+
 import torch
 import torch.nn as nn
 import torchvision.models as tv_models
-from lightly.models.modules import SimCLRProjectionHead
+from lightly.models.modules import MoCoProjectionHead, SimCLRProjectionHead
+from lightly.models.utils import deactivate_requires_grad
 
-from encoder_pipeline.model_trainer.config import ClassifierConfig, EfficientNetVariant, ResNetVariant, SimCLRConfig, backbone
+from encoder_pipeline.model_trainer.config import (
+    ClassifierConfig, EfficientNetVariant, MoCoConfig, MoCoV3Config, ResNetVariant, SimCLRConfig, backbone,
+)
 
 
 class ResNetBackbone(nn.Module):
@@ -56,6 +61,58 @@ class SimCLRModel(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.projection_head(self.backbone(x))
+
+
+class MoCoModel(nn.Module):
+    """Query encoder (backbone + projection head) trained by gradient, plus a
+    momentum-updated copy that produces the keys."""
+
+    def __init__(self, config: MoCoConfig) -> None:
+        super().__init__()
+        self.backbone = build_backbone(config.backbone_name)
+        self.projection_head = MoCoProjectionHead(
+            self.backbone.out_features, config.projection_hidden_dim, config.projection_out_dim,
+        )
+        self.backbone_momentum = copy.deepcopy(self.backbone)
+        self.projection_head_momentum = copy.deepcopy(self.projection_head)
+        deactivate_requires_grad(self.backbone_momentum)
+        deactivate_requires_grad(self.projection_head_momentum)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.projection_head(self.backbone(x))
+
+    @torch.no_grad()
+    def forward_momentum(self, x: torch.Tensor) -> torch.Tensor:
+        return self.projection_head_momentum(self.backbone_momentum(x))
+
+
+class MoCoV3Model(nn.Module):
+    """MoCo v3 query encoder: backbone -> 3-layer projection head -> 2-layer
+    prediction head, all trained by gradient. The momentum-updated backbone +
+    projection head (no prediction head) produce the keys."""
+
+    def __init__(self, config: MoCoV3Config) -> None:
+        super().__init__()
+        self.backbone = build_backbone(config.backbone_name)
+        self.projection_head = MoCoProjectionHead(
+            self.backbone.out_features, config.projection_hidden_dim, config.projection_out_dim,
+            num_layers=3, batch_norm=True,
+        )
+        self.prediction_head = MoCoProjectionHead(
+            config.projection_out_dim, config.prediction_hidden_dim, config.projection_out_dim,
+            num_layers=2, batch_norm=True,
+        )
+        self.backbone_momentum = copy.deepcopy(self.backbone)
+        self.projection_head_momentum = copy.deepcopy(self.projection_head)
+        deactivate_requires_grad(self.backbone_momentum)
+        deactivate_requires_grad(self.projection_head_momentum)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.prediction_head(self.projection_head(self.backbone(x)))
+
+    @torch.no_grad()
+    def forward_momentum(self, x: torch.Tensor) -> torch.Tensor:
+        return self.projection_head_momentum(self.backbone_momentum(x))
 
 
 class ClassifierModel(nn.Module):

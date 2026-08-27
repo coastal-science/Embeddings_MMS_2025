@@ -26,11 +26,22 @@ class DataLoaderConfig(StrictBaseModel):
     splits_path: Optional[str] = None
     """Local path to a previously-logged splits.csv to reuse instead of
     computing a fresh split. Unset = compute_splits as usual."""
+    oversample: bool = False
+    """Class-balanced oversampling of the train split via a
+    WeightedRandomSampler. Applies to any paradigm."""
+
+
 class SpectrogramSSLAugmentConfig(StrictBaseModel):
     time_mask_frac: float = 0.15
     freq_mask_frac: float = 0.15
     shift_frac: float = 0.1
     noise_std: float = 0.05
+
+
+class SpectrogramClassifierAugmentConfig(StrictBaseModel):
+    shift_frac: float = 0.1
+    """Max circular time-window shift, as a fraction of the time axis length.
+    Applied to train batches only."""
 
 
 ResNetVariant = Literal["resnet18", "resnet34", "resnet50", "resnet101", "resnet152"]
@@ -55,10 +66,49 @@ class SimCLRConfig(StrictBaseModel):
     device: str = Field(default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu")
 
 
+class MoCoConfig(StrictBaseModel):
+    """Backbone + Lightly's MoCo projection head, momentum encoder, and
+    memory-bank NTXent loss"""
+
+    backbone_name: backbone = "resnet18"
+    augment: SpectrogramSSLAugmentConfig = SpectrogramSSLAugmentConfig()
+    projection_hidden_dim: int = 512
+    projection_out_dim: int = 128
+    temperature: float = 0.2
+    memory_bank_size: int = 4096
+    """Number of key embeddings kept as extra negatives."""
+    momentum: float = 0.999
+    """EMA rate for updating the momentum (key) encoder from the query encoder."""
+    epochs: int = 10
+    lr: float = 3e-4
+    weight_decay: float = 1e-6
+    device: str = Field(default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu")
+
+
+class MoCoV3Config(StrictBaseModel):
+    """Backbone + Lightly's MoCo v3: 3-layer projection head, 2-layer
+    prediction head, momentum encoder with cosine-annealed momentum, and a
+    symmetric in-batch NTXent loss (no memory bank)."""
+
+    backbone_name: backbone = "resnet18"
+    augment: SpectrogramSSLAugmentConfig = SpectrogramSSLAugmentConfig()
+    projection_hidden_dim: int = 4096
+    projection_out_dim: int = 256
+    prediction_hidden_dim: int = 4096
+    temperature: float = 0.2
+    momentum: float = 0.99
+    """Base EMA rate for the key encoder; cosine-annealed to 1.0 over training."""
+    epochs: int = 10
+    lr: float = 3e-4
+    weight_decay: float = 1e-6
+    device: str = Field(default_factory=lambda: "cuda" if torch.cuda.is_available() else "cpu")
+
+
 class ClassifierConfig(StrictBaseModel):
     """Backbone + linear classification head"""
 
     backbone_name: backbone = "resnet18"
+    augment: SpectrogramClassifierAugmentConfig = SpectrogramClassifierAugmentConfig()
     epochs: int = 10
     lr: float = 3e-4
     weight_decay: float = 1e-6
@@ -69,8 +119,12 @@ class ModelTrainerConfig(StrictBaseModel):
     run_name: Optional[str] = None
     """MLflow sub-run name. If unset, MLflow auto-generates one."""
     dataloader: DataLoaderConfig = DataLoaderConfig()
-    paradigm: Literal["simclr", "classifier"] = "simclr"
+    paradigm: Literal["simclr", "moco", "moco_v3", "classifier"] = "simclr"
     """Which Trainer train_model runs."""
     simclr: SimCLRConfig = SimCLRConfig()
+    moco: Optional[MoCoConfig] = None
+    """Required when paradigm == 'moco'."""
+    moco_v3: Optional[MoCoV3Config] = None
+    """Required when paradigm == 'moco_v3'."""
     classifier: Optional[ClassifierConfig] = None
     """Required when paradigm == 'classifier'."""
