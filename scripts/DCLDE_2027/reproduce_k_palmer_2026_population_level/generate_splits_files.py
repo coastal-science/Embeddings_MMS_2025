@@ -39,6 +39,29 @@ def _recording_stems(split_csv: Path) -> set:
     return set(df["Soundfile"].map(_stem))
 
 
+def stratify_for_split_coverage(
+    df: pd.DataFrame, splits_src_dir: Path, n_per_cell: int, random_state: int = 0,
+) -> pd.DataFrame:
+    """Row subset of df keeping up to n_per_cell rows for every (Labels value,
+    split cell) generate_splits_files would fill -- each splits_<name>.csv's
+    "train", plus the shared "test" -- with rows matched to cells by recording
+    exactly as generate_splits_files does. Lets a --test build's splits_*.csv
+    still carry every class the full build has, wherever the recordings for it
+    exist."""
+    stem = df["LocalPath"].map(lambda p: _stem(p) if pd.notna(p) else None)
+    test_stems = _recording_stems(splits_src_dir / HOLDOUT_EVAL)
+
+    cell_masks = [stem.isin(test_stems)]
+    for train_csv in sorted(splits_src_dir.glob("train_*.csv")) + [splits_src_dir / FULL_TRAIN]:
+        cell_masks.append(stem.isin(_recording_stems(train_csv) - test_stems))
+
+    keep: set = set()
+    for mask in cell_masks:
+        for _, group in df[mask].groupby("Labels"):
+            keep.update(group.sample(n=min(n_per_cell, len(group)), random_state=random_state).index)
+    return df.loc[sorted(keep)]
+
+
 def generate_splits_files(all_anno: pd.DataFrame, out_dir: Path, splits_src_dir: Path) -> None:
     """Write one splits_<name>.csv per train_*.csv / full_train.csv in splits_src_dir, all testing on holdout_eval.csv."""
     anno_stem = all_anno["LocalPath"].map(lambda p: _stem(p) if pd.notna(p) else None)

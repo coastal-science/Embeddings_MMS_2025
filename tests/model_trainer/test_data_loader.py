@@ -97,17 +97,41 @@ def test_no_col_to_group_by_splits_row_by_row(hdf5_path):
 def test_class_balanced_sampler_evens_out_a_skewed_train_split():
     labels = [0] * 90 + [1] * 10
     subset_idx = np.arange(len(labels))
-    sampler = class_balanced_sampler(labels, subset_idx)
+    sampler = class_balanced_sampler(labels, subset_idx, class_names=["a", "b"])
 
     torch.manual_seed(0)
     drawn = np.asarray(labels)[list(sampler)]
-    assert len(drawn) == len(subset_idx)
+    assert len(drawn) == 90 * 2  # every class drawn to the largest class's size
     assert 0.4 < drawn.mean() < 0.6  # both classes now roughly equally represented
 
 
 def test_class_balanced_sampler_indexes_into_subset_positions_only():
     labels = [0, 1, 0, 1, 0, 1, 0, 1]
     subset_idx = np.array([1, 3, 5])  # all class 1
-    drawn = list(class_balanced_sampler(labels, subset_idx))
+    drawn = list(class_balanced_sampler(labels, subset_idx, class_names=["a", "b"]))
 
     assert all(0 <= i < len(subset_idx) for i in drawn)
+
+
+def test_class_balanced_sampler_downsamples_background_to_the_largest_real_class():
+    labels = [0] * 1000 + [1] * 100 + [2] * 20  # 0 = background, huge
+    class_names = ["background", "hw", "kw"]
+    subset_idx = np.arange(len(labels))
+
+    torch.manual_seed(0)
+    drawn = np.asarray(labels)[list(class_balanced_sampler(labels, subset_idx, class_names, "background"))]
+    counts = np.bincount(drawn, minlength=3)
+
+    assert len(drawn) == 100 * 3  # target is hw's 100, not background's 1000
+    assert all(abs(c - 100) < 40 for c in counts)  # background pulled down, kw pulled up
+
+
+def test_class_balanced_sampler_draws_a_fresh_background_subset_each_epoch():
+    labels = [0] * 1000 + [1] * 100
+    sampler = class_balanced_sampler(labels, np.arange(1100), ["background", "hw"], "background")
+
+    torch.manual_seed(1)
+    epoch1 = set(sampler)
+    torch.manual_seed(2)
+    epoch2 = set(sampler)
+    assert epoch1 != epoch2  # different random background windows drawn

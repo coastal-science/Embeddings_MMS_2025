@@ -23,7 +23,10 @@ import pandas as pd
 from tqdm import tqdm
 
 from encoder_pipeline.common.mlflow_utils import configure_datasets_mlflow
-from reproduce_k_palmer_2026_population_level.generate_splits_files import generate_splits_files
+from reproduce_k_palmer_2026_population_level.generate_splits_files import (
+    generate_splits_files,
+    stratify_for_split_coverage,
+)
 
 DROP_COLS = {"Unnamed: 0"}
 MERGE_COLS = ["Soundfile", "FileBeginSec", "FileEndSec", "CallType", "CalltypeCategory", "CalltypeHasQ", "HasQ"]
@@ -141,12 +144,19 @@ def subsample_by_label(df: pd.DataFrame, n_per_label: int, random_state: int = 0
 def build_annotations_with_calltype(
     annotations_path: Path, audio_root: Path, raw_data_dir: Path, background_method: str,
     background_window_duration: float, background_hop_duration: float, background_event_buffer: float,
-    test: bool = False,
+    test: bool = False, splits_src_dir: Path | None = None,
 ) -> pd.DataFrame:
     """Join the root annotations with parent-CSV call types and derived
     columns, then append background_method-selected "Background" rows. If
-    test, subsamples to TEST_N_PER_LABEL rows per label before (and after)
-    background selection, for fast iteration."""
+    test, subsamples for fast iteration before (and after) background
+    selection: to TEST_N_PER_LABEL rows per (label, split cell) when
+    splits_src_dir is given -- so every splits_*.csv keeps every class it
+    could have -- else TEST_N_PER_LABEL rows per label."""
+
+    def _test_subsample(df: pd.DataFrame) -> pd.DataFrame:
+        if splits_src_dir and splits_src_dir.exists():
+            return stratify_for_split_coverage(df, splits_src_dir, TEST_N_PER_LABEL)
+        return subsample_by_label(df, TEST_N_PER_LABEL)
 
     audio_index = build_local_audio_index(audio_root)
 
@@ -170,14 +180,14 @@ def build_annotations_with_calltype(
     all_anno["BackgroundMethod"] = np.nan  # real annotations weren't algorithmically generated
 
     if test:
-        all_anno = subsample_by_label(all_anno, TEST_N_PER_LABEL)
+        all_anno = _test_subsample(all_anno)
 
     background = select_background_windows(
         all_anno, background_method, all_anno.columns.tolist(),
         background_window_duration, background_hop_duration, background_event_buffer,
     )
     if test:
-        background = subsample_by_label(background, TEST_N_PER_LABEL)
+        background = _test_subsample(background)
 
     result = pd.concat([all_anno, background], ignore_index=True)
     result = result.drop_duplicates(ignore_index=True)  # source Annotations.csv + parent merge emit some exact-dup rows
@@ -280,7 +290,7 @@ def main() -> None:
         all_anno = build_annotations_with_calltype(
             annotations_path, args.dclde_root, run_dir, args.background_method,
             args.background_window_duration, args.background_hop_duration, args.background_event_buffer,
-            args.test,
+            args.test, args.reconstructed_splits_dir,
         )
 
         out_path = run_dir / "annotations.csv"

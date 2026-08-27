@@ -115,12 +115,25 @@ def save_splits(hdf5_path: str, splits: list[dict[str, np.ndarray]], out_dir: st
     return str(out_path)
 
 
-def class_balanced_sampler(labels: list[int], subset_idx: np.ndarray) -> WeightedRandomSampler:
-    """WeightedRandomSampler over subset_idx positions that draws every class
-    with equal probability, oversampling minority classes with replacement."""
+def class_balanced_sampler(
+    labels: list[int], subset_idx: np.ndarray, class_names: list[str], background_label: Optional[str] = None,
+) -> WeightedRandomSampler:
+    """WeightedRandomSampler over subset_idx positions that draws every present
+    class to the same size each epoch: the largest class, or -- when
+    background_label is given -- the largest class other than that one, so an
+    outsized background pool is randomly downsampled to the real-class ceiling
+    instead of raising it. Minority classes are oversampled with replacement."""
     subset_labels = np.asarray(labels)[subset_idx]
-    weights = 1.0 / np.bincount(subset_labels)[subset_labels]
-    return WeightedRandomSampler(torch.as_tensor(weights, dtype=torch.double), len(subset_idx), replacement=True)
+    counts = np.bincount(subset_labels, minlength=len(class_names))
+    present = counts > 0
+    ceiling = present.copy()
+    if background_label in class_names:
+        ceiling[class_names.index(background_label)] = False
+    target = counts[ceiling if ceiling.any() else present].max()
+    weights = 1.0 / counts[subset_labels]
+    return WeightedRandomSampler(
+        torch.as_tensor(weights, dtype=torch.double), int(target) * int(present.sum()), replacement=True,
+    )
 
 
 def build_dataloaders(hdf5_path: str, config: DataLoaderConfig, data_dir: str) -> list[dict[str, DataLoader]]:
@@ -134,7 +147,10 @@ def build_dataloaders(hdf5_path: str, config: DataLoaderConfig, data_dir: str) -
         if name == "train" and config.oversample:
             return DataLoader(
                 Subset(dataset, idx), batch_size=config.batch_size,
-                sampler=class_balanced_sampler(dataset.labels, idx), num_workers=config.num_workers,
+                sampler=class_balanced_sampler(
+                    dataset.labels, idx, dataset.classes, config.oversample_background_label,
+                ),
+                num_workers=config.num_workers,
             )
         return DataLoader(
             Subset(dataset, idx), batch_size=config.batch_size, shuffle=config.shuffle, num_workers=config.num_workers,

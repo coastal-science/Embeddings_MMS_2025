@@ -26,9 +26,15 @@ class DataLoaderConfig(StrictBaseModel):
     splits_path: Optional[str] = None
     """Local path to a previously-logged splits.csv to reuse instead of
     computing a fresh split. Unset = compute_splits as usual."""
-    oversample: bool = False
-    """Class-balanced oversampling of the train split via a
-    WeightedRandomSampler. Applies to any paradigm."""
+    oversample: bool = True
+    """Oversample the train split so every class is drawn to the largest
+    class's size each epoch, via a WeightedRandomSampler. Applies to any
+    paradigm."""
+    oversample_background_label: Optional[str] = 'Background'
+    """Label kept out of the oversampling target-size calc (e.g. 'Background').
+    It's still drawn to the largest *other* class's size each epoch, so an
+    outsized background pool is randomly downsampled rather than pulling every
+    real class up to it."""
 
 
 class SpectrogramSSLAugmentConfig(StrictBaseModel):
