@@ -1,10 +1,11 @@
 import h5py
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 
 from encoder_pipeline.model_trainer.config import DataLoaderConfig
-from encoder_pipeline.model_trainer.data_loader import class_balanced_sampler, compute_splits
+from encoder_pipeline.model_trainer.data_loader import class_balanced_sampler, compute_splits, load_saved_splits
 
 
 @pytest.fixture
@@ -111,6 +112,24 @@ def test_class_balanced_sampler_indexes_into_subset_positions_only():
     drawn = list(class_balanced_sampler(labels, subset_idx, class_names=["a", "b"]))
 
     assert all(0 <= i < len(subset_idx) for i in drawn)
+
+
+def test_load_saved_splits_skips_uids_the_hdf5_no_longer_has(tmp_path):
+    """A dropped class (dataset.classes_to_drop) removes its uids from the
+    hdf5, but the saved splits.csv still lists them."""
+    path = tmp_path / "d.h5"
+    with h5py.File(path, "w") as h5:
+        h5.create_dataset("spec", data=np.zeros((3, 4)))
+        h5.create_dataset("uid", data=np.array([10, 11, 12]))  # uid 13, 14 were dropped
+
+    splits_csv = tmp_path / "splits.csv"
+    pd.DataFrame({"uid": [10, 11, 12, 13, 14], "fold_0": ["train", "train", "test", "train", "test"]}).to_csv(
+        splits_csv, index=False,
+    )
+
+    [split] = load_saved_splits(str(path), str(splits_csv))
+    assert sorted(split["train"]) == [0, 1]  # rows for uid 10, 11; uid 13 skipped
+    assert sorted(split["test"]) == [2]      # row for uid 12; uid 14 skipped
 
 
 def test_class_balanced_sampler_downsamples_background_to_the_largest_real_class():

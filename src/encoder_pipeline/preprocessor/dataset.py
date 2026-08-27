@@ -31,6 +31,7 @@ class Dataset:
                     "audio_file": self.audio_file_config.model_dump(),
                     "annotation": self.annotation_config.model_dump(),
                     "annotations_csv": self.dataset_config.annotations_csv,
+                    "classes_to_drop": self.dataset_config.classes_to_drop,
                     "run_name": self.run_name,
         })
         # checks if file exists locally - TODO: check mlflow as well
@@ -50,6 +51,13 @@ class Dataset:
         # convert necessary cols to numeric
         for col in ["FileBeginSec", "FileEndSec", "Duration", "CenterTime"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        if self.dataset_config.classes_to_drop:
+            if "Labels" not in df.columns:
+                raise ValueError(f"classes_to_drop set but 'Labels' col not in {self.dataset_config.annotations_csv}")
+            drop = df["Labels"].isin(self.dataset_config.classes_to_drop)
+            logger.info("classes_to_drop {}: removing {} of {} rows", self.dataset_config.classes_to_drop, int(drop.sum()), len(df))
+            df = df[~drop]
 
         return df
 

@@ -5,6 +5,22 @@ import torch.nn as nn
 from encoder_pipeline.evaluation.metrics import classification_metrics
 
 
+def remap_labels(
+    embeddings: dict[str, tuple[np.ndarray, np.ndarray]], class_names: list[str], label_map: dict[str, str],
+) -> tuple[dict[str, tuple[np.ndarray, np.ndarray]], list[str]]:
+    """Collapses class labels through label_map (unmapped names pass through),
+    the same way DataLoaderConfig.class_label_map does in training, re-indexing
+    every split's labels to the new sorted class list. Returns the remapped
+    embeddings and that class list."""
+    mapped = [label_map.get(name, name) for name in class_names]
+    new_classes = sorted(set(mapped))
+    new_idx = {name: i for i, name in enumerate(new_classes)}
+    old_to_new = np.array([new_idx[name] for name in mapped])
+
+    remapped = {split: (x, old_to_new[y]) for split, (x, y) in embeddings.items()}
+    return remapped, new_classes
+
+
 class LinearProbe:
     """Trains a single linear layer on frozen embeddings to predict labels
     -- full-batch Adam + cross-entropy"""

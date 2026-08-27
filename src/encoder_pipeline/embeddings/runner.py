@@ -9,7 +9,7 @@ from encoder_pipeline.common.config_utils import load_pipeline_config
 from encoder_pipeline.common.mlflow_utils import configure_mlflow, flatten_params, download_artifact
 from encoder_pipeline.embeddings.config import EmbeddingsConfig
 from encoder_pipeline.embeddings.embed import HALLOEmbeddingModel
-from encoder_pipeline.evaluation.linear_probe import LinearProbe
+from encoder_pipeline.evaluation.linear_probe import LinearProbe, remap_labels
 from encoder_pipeline.model_trainer.data_loader import build_dataloaders
 
 
@@ -44,8 +44,15 @@ def generate_embeddings(
 
                 if "train" in embeddings:
                     # run linear probing and store metric curves in mlflow post training linear layer
+                    probe_embeddings = embeddings
+                    if config.linear_probe_label_map:
+                        class_names = next(iter(loaders.values())).dataset.dataset.classes
+                        probe_embeddings, probe_classes = remap_labels(
+                            probe_embeddings, class_names, config.linear_probe_label_map,
+                        )
+                        mlflow.log_param("linear_probe_classes", probe_classes)
                     linear_probe = LinearProbe(epochs=config.linear_probe_epochs, lr=config.linear_probe_lr)
-                    linear_probe_metrics, linear_probe_loss_curves = linear_probe.evaluate(embeddings)
+                    linear_probe_metrics, linear_probe_loss_curves = linear_probe.evaluate(probe_embeddings)
                     for curve_key, curve_values in linear_probe_loss_curves.items():
                         for epoch, value in enumerate(curve_values):
                             mlflow.log_metric(f"linear_probe_{curve_key}", value, step=epoch)

@@ -121,6 +121,10 @@ class DatasetConfig(StrictBaseModel):
     metadata_columns: Optional[list[str]] = None # specify metadata columns which should be included.
     local_file_col: Optional[str] = "LocalPath" # column in annotations csv where local audio file paths are specified
     uid_col: Optional[str] = "uid" # column in annotations csv whuich specifies the row-level uid
+    classes_to_drop: Optional[list[str]] = None
+    """Label values (matched against the 'Labels' column) to drop from the
+    annotations before building the dataset. Their rows never enter the HDF5,
+    so they're absent from every later split."""
     def resolve_max_workers(self) -> Optional[int]:
         if self.max_workers is None or self.max_workers > 0:
             return self.max_workers

@@ -77,7 +77,9 @@ def compute_splits(hdf5_path: str, config: DataLoaderConfig) -> list[dict[str, n
 def load_saved_splits(hdf5_path: str, splits_path: str, uid_col: str = "uid") -> list[dict[str, np.ndarray]]:
     """Loads a previously-saved splits.csv and maps its uid -> fold_N
     assignments onto this hdf5's row indices (by uid value, not row order,
-    since a rebuilt hdf5 isn't guaranteed to keep the same row order)."""
+    since a rebuilt hdf5 isn't guaranteed to keep the same row order). A saved
+    uid the hdf5 no longer has -- e.g. dropped by dataset.classes_to_drop --
+    is skipped."""
     with h5py.File(hdf5_path, "r") as h5:
         dset = h5[uid_col]
         uids = dset.asstr()[:] if h5py.check_string_dtype(dset.dtype) else dset[:]
@@ -90,7 +92,7 @@ def load_saved_splits(hdf5_path: str, splits_path: str, uid_col: str = "uid") ->
     for fold_col in fold_cols:
         split: dict[str, list[int]] = {}
         for uid, split_name in zip(saved["uid"], saved[fold_col]):
-            if pd.isna(split_name):
+            if pd.isna(split_name) or uid not in uid_to_row:
                 continue
             split.setdefault(split_name, []).append(uid_to_row[uid])
         splits.append({name: np.array(idx) for name, idx in split.items()})
